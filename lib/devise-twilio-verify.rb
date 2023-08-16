@@ -4,9 +4,10 @@ require 'devise'
 require 'twilio-ruby'
 
 module Devise
-  mattr_accessor :twilio_verify_remember_device, :twilio_verify_enable_qr_code
+  mattr_accessor :twilio_verify_remember_device, :twilio_verify_enable_qr_code, :twilio_verify_resource_phone_attribute
   @@twilio_verify_remember_device = 1.month
   @@twilio_verify_enable_qr_code = false
+  @@twilio_verify_resource_phone_attribute = :mobile_phone
 end
 
 module DeviseTwilioVerify

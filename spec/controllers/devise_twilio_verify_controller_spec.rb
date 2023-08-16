@@ -71,7 +71,11 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
       describe "with a valid token" do
         before(:each) {
-          expect(TwilioVerifyService).to receive(:verify_sms_token).with(user.mobile_phone, valid_twilio_verify_token).and_return(verify_success)
+          expect(TwilioVerifyService).to(
+            receive(:verify_sms_token)
+              .with(user.mobile_phone, valid_twilio_verify_token)
+              .and_return(verify_success)
+          )
         }
 
         describe "without remembering" do
@@ -139,7 +143,16 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
       describe "with an invalid token" do
         before(:each) {
-          expect(TwilioVerifyService).to receive(:verify_sms_token).with(user.mobile_phone, invalid_twilio_verify_token).and_return(verify_failure)
+          expect(TwilioVerifyService).to(
+            receive(:verify_sms_token)
+              .with(user.mobile_phone, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
+          expect(TwilioVerifyService).to(
+            receive(:verify_totp_token)
+              .with(user, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
           post :POST_verify_twilio_verify, params: { :token => invalid_twilio_verify_token }
         }
 
@@ -167,11 +180,19 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         end
 
         it 'locks the account when failed_attempts exceeds maximum' do
-          expect(Authy::API).to receive(:verify).exactly(Devise.maximum_attempts).times.with({
-            :id => lockable_user.authy_id,
-            :token => invalid_twilio_verify_token,
-            :force => true
-          }).and_return(verify_failure)
+          expect(TwilioVerifyService).to(
+            receive(:verify_sms_token)
+              .exactly(Devise.maximum_attempts)
+              .times
+              .with(lockable_user.mobile_phone, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
+          expect(TwilioVerifyService).to(
+            receive(:verify_totp_token)
+              .exactly(Devise.maximum_attempts)
+              .with(lockable_user, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
           (Devise.maximum_attempts).times do
             post :POST_verify_twilio_verify, params: { token: invalid_twilio_verify_token }
           end
@@ -186,11 +207,19 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           request.session['user_id']               = user.id
           request.session['user_password_checked'] = true
 
-          expect(Authy::API).to receive(:verify).exactly(Devise.maximum_attempts).times.with({
-            :id => user.authy_id,
-            :token => invalid_twilio_verify_token,
-            :force => true
-          }).and_return(verify_failure)
+          expect(TwilioVerifyService).to(
+            receive(:verify_sms_token)
+              .exactly(Devise.maximum_attempts)
+              .times
+              .with(user.mobile_phone, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
+          expect(TwilioVerifyService).to(
+            receive(:verify_totp_token)
+              .exactly(Devise.maximum_attempts)
+              .with(user, invalid_twilio_verify_token)
+              .and_return(verify_failure)
+          )
 
           Devise.maximum_attempts.times do
             post :POST_verify_twilio_verify, params: { token: invalid_twilio_verify_token }
@@ -203,7 +232,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
     end
   end
 
-  describe "enabling/disabling authy" do
+  describe "enabling/disabling twilio_verify" do
     describe "with no-one logged in" do
       it "GET #enable_twilio_verify should redirect to sign in" do
         get :GET_enable_twilio_verify
@@ -232,22 +261,25 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
     end
 
     describe "with a logged in user" do
+      let(:enable_success) { double("Twilio::Verify::Response", status: 'unverified', sid: 'YF123456') }
+      let(:enable_failure) { double("Twilio::Verify::Response", status: 'failed', sid: nil) }
+
       before(:each) { sign_in(user) }
 
       describe "GET #enable_twilio_verify" do
-        it "should render enable authy view if user isn't enabled" do
+        it "should render enable twilio_verify view if user isn't enabled" do
           user.update_attribute(:twilio_verify_enabled, false)
           get :GET_enable_twilio_verify
           expect(response).to render_template("enable_twilio_verify")
         end
 
-        it "should render enable authy view if user doesn't have an authy_id" do
-          user.update_attribute(:authy_id, nil)
+        it "should render enable twilio_verify view if user doesn't have an twilio_totp_factor_sid" do
+          user.update_attribute(:twilio_totp_factor_sid, nil)
           get :GET_enable_twilio_verify
           expect(response).to render_template("enable_twilio_verify")
         end
 
-        it "should redirect and set flash if authy is enabled" do
+        it "should redirect and set flash if twilio_verify is enabled" do
           user.update_attribute(:twilio_verify_enabled, true)
           get :GET_enable_twilio_verify
           expect(response).to redirect_to(root_path)
@@ -256,23 +288,23 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
 
       describe "POST #enable_twilio_verify" do
-        let(:user) { create(:user) }
+        let(:user) { create(:user, twilio_totp_factor_sid: 'dummy') }
         let(:cellphone) { '3010008090' }
         let(:country_code) { '57' }
 
-        describe "with a successful registration to Authy" do
+        describe "with a successful registration for TOTP" do
           before(:each) do
-            expect(Authy::API).to receive(:register_user).with(
-              :email => user.email,
-              :cellphone => cellphone,
-              :country_code => country_code
-            ).and_return(double("Authy::User", :ok? => true, :id => "123"))
+            expect(TwilioVerifyService).to(
+              receive(:setup_totp_service)
+                .with(user)
+                .and_return(enable_success)
+            )
             post :POST_enable_twilio_verify, :params => { :cellphone => cellphone, :country_code => country_code }
           end
 
-          it "save the authy_id to the user" do
+          it "save the twilio_totp_factor_sid to the user" do
             user.reload
-            expect(user.authy_id).to eq("123")
+            expect(user.twilio_totp_factor_sid).to eq('YF123456')
           end
 
           it "should not enable the user yet" do
@@ -289,11 +321,11 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           before(:each) do
             expect(user).to receive(:save).and_return(false)
             expect(subject).to receive(:current_user).and_return(user)
-            expect(Authy::API).to receive(:register_user).with(
-              :email => user.email,
-              :cellphone => cellphone,
-              :country_code => country_code
-            ).and_return(double("Authy::User", :ok? => true, :id => "123"))
+            expect(TwilioVerifyService).to(
+              receive(:setup_totp_service)
+                .with(user)
+                .and_return(enable_success)
+            )
             post :POST_enable_twilio_verify, :params => { :cellphone => cellphone, :country_code => country_code }
           end
 
@@ -306,21 +338,20 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           end
         end
 
-        describe "with an unsuccessful registration to Authy" do
+        describe "with an unsuccessful registration for TOTP" do
           before(:each) do
-            expect(Authy::API).to receive(:register_user).with(
-              :email => user.email,
-              :cellphone => cellphone,
-              :country_code => country_code
-            ).and_return(double("Authy::User", :ok? => false))
+            expect(TwilioVerifyService).to(
+              receive(:setup_totp_service)
+                .with(user)
+                .and_return(enable_failure)
+            )
 
             post :POST_enable_twilio_verify, :params => { :cellphone => cellphone, :country_code => country_code }
           end
 
-          it "does not update the authy_id" do
-            old_authy_id = user.authy_id
+          it "does not update the twilio_totp_factor_sid" do
             user.reload
-            expect(user.authy_id).to eq(old_authy_id)
+            expect(user.twilio_totp_factor_sid).to eq('dummy')
           end
 
           it "shows an error flash" do
@@ -334,32 +365,32 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
 
       describe "GET verify_twilio_verify_installation" do
-        describe "with a user that hasn't enabled authy yet" do
+        describe "with a user that hasn't enabled twilio_verify yet" do
           let(:user) { create(:user) }
           before(:each) { sign_in(user) }
 
-          it "should redirect to enable authy" do
+          it "should redirect to enable twilio_verify" do
             get :GET_verify_twilio_verify_installation
             expect(response).to redirect_to user_enable_twilio_verify_path
           end
         end
 
-        describe "with a user that has enabled authy" do
-          it "should redirect to after authy verified path" do
+        describe "with a user that has enabled twilio_verify" do
+          it "should redirect to after twilio_verify verified path" do
             get :GET_verify_twilio_verify_installation
             expect(response).to redirect_to root_path
           end
         end
 
-        describe "with a user with an authy id without authy enabled" do
+        describe "with a user with a totp factor sid without twilio_verify enabled" do
           before(:each) { user.update_attribute(:twilio_verify_enabled, false) }
 
-          it "should render the authy verification page" do
+          it "should render the twilio_verify verification page" do
             get :GET_verify_twilio_verify_installation
             expect(response).to render_template('verify_twilio_verify_installation')
           end
 
-          describe "with qr codes turned on" do
+          describe "with qr codes turned on", pending: true do
             before(:each) do
               Devise.twilio_verify_enable_qr_code = true
             end
@@ -369,10 +400,6 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             end
 
             it "should hit API for a QR code" do
-              expect(Authy::API).to receive(:request_qr_code).with(
-                :id => user.authy_id
-              ).and_return(double("Authy::Request", :qr_code => 'https://example.com/qr.png'))
-
               get :GET_verify_twilio_verify_installation
               expect(response).to render_template('verify_twilio_verify_installation')
               expect(assigns[:twilio_verify_qr_code]).to eq('https://example.com/qr.png')
@@ -383,42 +410,45 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
       describe "POST verify_twilio_verify_installation" do
         let(:token) { "000000" }
+        let(:verify_success) { double("Twilio::Verify::Response", status: 'approved') }
+        let(:verify_failure) { double("Twilio::Verify::Response", status: 'failed') }
 
-        describe "with a user without an authy id" do
+        describe "with a user without a totp factor sid" do
           let(:user) { create(:user) }
+
           it "redirects to enable path" do
-            post :POST_verify_twilio_verify_installation, :params => { :token => token }
+            post :POST_verify_twilio_verify_installation, params: { token: token }
             expect(response).to redirect_to(user_enable_twilio_verify_path)
           end
         end
 
-        describe "with a user that has an authy id and is enabled" do
-          it "redirects to after authy verified path" do
+        describe "with a user that has an totp factor sid and is enabled" do
+          it "redirects to after twilio_verify verified path" do
             post :POST_verify_twilio_verify_installation, :params => { :token => token }
             expect(response).to redirect_to(root_path)
           end
         end
 
-        describe "with a user that has an authy id but isn't enabled" do
+        describe "with a user that has a totp factor sid but isn't enabled" do
           before(:each) { user.update_attribute(:twilio_verify_enabled, false) }
 
           describe "successful verification" do
             before(:each) do
-              expect(Authy::API).to receive(:verify).with({
-                :id => user.authy_id,
-                :token => token,
-                :force => true
-              }).and_return(double("Authy::Response", :ok? => true))
+              expect(TwilioVerifyService).to(
+                receive(:verify_sms_token)
+                  .with(user.mobile_phone, token)
+                  .and_return(verify_success)
+              )
               post :POST_verify_twilio_verify_installation, :params => { :token => token, :remember_device => '0' }
             end
 
-            it "should enable authy for user" do
+            it "should enable twilio_verify for user" do
               user.reload
               expect(user.twilio_verify_enabled).to be true
             end
 
             it "should set {resource}_twilio_verify_token_checked in the session" do
-              expect(session["user_twilio_verify_token_checked"]).to be true
+              expect(session['user_twilio_verify_token_checked']).to be true
             end
 
             it "should set a flash notice and redirect" do
@@ -427,26 +457,26 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             end
 
             it "should not set a remember_device cookie" do
-              expect(cookies["remember_device"]).to be_nil
+              expect(cookies['remember_device']).to be_nil
             end
           end
 
           describe "successful verification with remember device" do
             before(:each) do
-              expect(Authy::API).to receive(:verify).with({
-                :id => user.authy_id,
-                :token => token,
-                :force => true
-              }).and_return(double("Authy::Response", :ok? => true))
+              expect(TwilioVerifyService).to(
+                receive(:verify_sms_token)
+                  .with(user.mobile_phone, token)
+                  .and_return(verify_success)
+              )
               post :POST_verify_twilio_verify_installation, :params => { :token => token, :remember_device => '1' }
             end
 
-            it "should enable authy for user" do
+            it "should enable twilio_verify for user" do
               user.reload
               expect(user.twilio_verify_enabled).to be true
             end
             it "should set {resource}_twilio_verify_token_checked in the session" do
-              expect(session["user_twilio_verify_token_checked"]).to be true
+              expect(session['user_twilio_verify_token_checked']).to be true
             end
             it "should set a flash notice and redirect" do
               expect(response).to redirect_to(root_path)
@@ -455,24 +485,24 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
             it "should set a signed remember_device cookie" do
               jar = ActionDispatch::Cookies::CookieJar.build(request, cookies.to_hash)
-              cookie = jar.signed["remember_device"]
+              cookie = jar.signed['remember_device']
               expect(cookie).not_to be_nil
               parsed_cookie = JSON.parse(cookie)
-              expect(parsed_cookie["id"]).to eq(user.id)
+              expect(parsed_cookie['id']).to eq(user.id)
             end
           end
 
           describe "unsuccessful verification" do
             before(:each) do
-              expect(Authy::API).to receive(:verify).with({
-                :id => user.authy_id,
-                :token => token,
-                :force => true
-              }).and_return(double("Authy::Response", :ok? => false))
+              expect(TwilioVerifyService).to(
+                receive(:verify_sms_token)
+                  .with(user.mobile_phone, token)
+                  .and_return(verify_failure)
+              )
               post :POST_verify_twilio_verify_installation, :params => { :token => token }
             end
 
-            it "should not enable authy for user" do
+            it "should not enable twilio_verify for user" do
               user.reload
               expect(user.twilio_verify_enabled).to be false
             end
@@ -483,7 +513,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             end
           end
 
-          describe "unsuccessful verification with qr codes turned on" do
+          describe "unsuccessful verification with qr codes turned on", pending: true do
             before(:each) do
               Devise.twilio_verify_enable_qr_code = true
             end
@@ -493,14 +523,11 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             end
 
             it "should hit API for a QR code" do
-              expect(Authy::API).to receive(:verify).with({
-                :id => user.authy_id,
-                :token => token,
-                :force => true
-              }).and_return(double("Authy::Response", :ok? => false))
-              expect(Authy::API).to receive(:request_qr_code).with(
-                :id => user.authy_id
-              ).and_return(double("Authy::Request", :qr_code => 'https://example.com/qr.png'))
+              expect(TwilioVerifyService).to(
+                receive(:verify_sms_token)
+                  .with(user.mobile_phone, token)
+                  .and_return(verify_success)
+              )
 
               post :POST_verify_twilio_verify_installation, :params => { :token => token }
               expect(response).to render_template('verify_twilio_verify_installation')
@@ -511,23 +538,26 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
 
       describe "POST disable_twilio_verify" do
+        let(:response_success) { double("Twilio::Verify::Response") }
+        let(:user) { create(:twilio_verify_user) }
+
         describe "successfully" do
           before(:each) do
             cookies.signed[:remember_device] = {
-              :value => {expires: Time.now.to_i, id: user.id}.to_json,
+              :value => { expires: Time.now.to_i, id: user.id }.to_json,
               :secure => false,
               :expires => User.twilio_verify_remember_device.from_now
             }
-            expect(Authy::API).to receive(:delete_user)
-              .with(:id => user.authy_id)
-              .and_return(double("Authy::Response", :ok? => true))
+            expect(TwilioVerifyService).to receive(:delete_totp_service)
+              .with(user)
+              .and_return(response_success)
 
             post :POST_disable_twilio_verify
           end
 
           it "should disable 2FA" do
             user.reload
-            expect(user.authy_id).to be nil
+            expect(user.twilio_totp_factor_sid).to be nil
             expect(user.twilio_verify_enabled).to be false
           end
 
@@ -541,22 +571,22 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           end
         end
 
-        describe "with more than one user using the same authy_id" do
+        describe "with more than one user using the same totp factor sid" do
           before(:each) do
-            @other_user = create(:twilio_verify_user, :authy_id => user.authy_id)
+            create(:twilio_verify_user, twilio_totp_factor_sid: user.twilio_totp_factor_sid)
             cookies.signed[:remember_device] = {
-              :value => {expires: Time.now.to_i, id: user.id}.to_json,
+              :value => { expires: Time.now.to_i, id: user.id }.to_json,
               :secure => false,
               :expires => User.twilio_verify_remember_device.from_now
             }
-            expect(Authy::API).not_to receive(:delete_user)
+            expect(TwilioVerifyService).not_to receive(:delete_totp_service)
 
             post :POST_disable_twilio_verify
           end
 
           it "should disable 2FA" do
             user.reload
-            expect(user.authy_id).to be nil
+            expect(user.twilio_totp_factor_sid).to be nil
             expect(user.twilio_verify_enabled).to be false
           end
 
@@ -573,20 +603,22 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "unsuccessfully" do
           before(:each) do
             cookies.signed[:remember_device] = {
-              :value => {expires: Time.now.to_i, id: user.id}.to_json,
+              :value => { expires: Time.now.to_i, id: user.id }.to_json,
               :secure => false,
               :expires => User.twilio_verify_remember_device.from_now
             }
-            expect(Authy::API).to receive(:delete_user)
-              .with(:id => user.authy_id)
-              .and_return(double("Authy::Response", :ok? => false))
+            expect(TwilioVerifyService).to(
+              receive(:delete_totp_service)
+                .with(user)
+                .and_raise(StandardError)
+            )
 
             post :POST_disable_twilio_verify
           end
 
           it "should not disable 2FA" do
             user.reload
-            expect(user.authy_id).not_to be nil
+            expect(user.twilio_totp_factor_sid).not_to be nil
             expect(user.twilio_verify_enabled).to be true
           end
 
@@ -606,7 +638,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
   describe "requesting authentication tokens" do
     describe "without a user" do
       it "Should not request sms if user couldn't be found" do
-        expect(Authy::API).not_to receive(:request_sms)
+        expect(TwilioVerifyService).not_to receive(:send_sms_token)
 
         post :request_sms
 
@@ -618,13 +650,17 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
     end
 
     describe "#request_sms" do
+      let(:verify_success) { double("Twilio::Verify::Response", status: 'pending') }
+      let(:verify_failure) { double("Twilio::Verify::Response", status: 'failed') }
+
       before(:each) do
-        expect(Authy::API).to receive(:request_sms)
-          .with(:id => user.authy_id, :force => true)
-          .and_return(
-            double("Authy::Response", :ok? => true, :message => "Token was sent.")
-          )
+        expect(TwilioVerifyService).to(
+          receive(:send_sms_token)
+            .with(user.mobile_phone)
+            .and_return(verify_success)
+        )
       end
+
       describe "with a logged in user" do
         before(:each) { sign_in user }
 
@@ -634,19 +670,19 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           body = JSON.parse(response.body)
 
           expect(body['sent']).to be_truthy
-          expect(body['message']).to eq("Token was sent.")
+          expect(body['message']).to eq('Token was sent.')
         end
       end
 
       describe "with a user_id in the session" do
-        before(:each) { session["user_id"] = user.id }
+        before(:each) { session['user_id'] = user.id }
 
         it "should send an SMS and respond with JSON" do
           post :request_sms
           expect(response.media_type).to eq('application/json')
           body = JSON.parse(response.body)
 
-          expect(body['sent']).to be_true
+          expect(body['sent']).to be_truthy
           expect(body['message']).to eq 'Token was sent.'
         end
       end

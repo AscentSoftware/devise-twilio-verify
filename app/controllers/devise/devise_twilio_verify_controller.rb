@@ -52,23 +52,56 @@ class Devise::DeviseTwilioVerifyController < DeviseController
   end
   
   def GET_enable_twilio_verify
-    render :enable_twilio_verify  
+    if resource.twilio_totp_factor_sid.blank? || !resource.twilio_verify_enabled?
+      render :enable_twilio_verify
+    else
+      set_flash_message(:notice, :already_enabled)
+      redirect_to after_twilio_verify_enabled_path_for(resource)
+    end
   end
 
   # enable 2fa
   def POST_enable_twilio_verify
-    if resource.update(twilio_verify_enabled: true)
-      redirect_to [resource_name, :verify_twilio_verify_installation] and return
-    else
+    totp_factor = TwilioVerifyService.setup_totp_service(resource)
+
+    if totp_factor.sid.blank?
       set_flash_message(:error, :not_enabled)
-      redirect_to after_twilio_verify_enabled_path_for(resource) and return
+      render :enable_twilio_verify and return
     end
+
+    if resource.update(twilio_totp_factor_sid: totp_factor.sid)
+      redirect_to [resource_name, :verify_twilio_verify_installation] and return
+    end
+
+    flash[:error] = resource.errors.full_messages.join(', ')
+    redirect_to after_twilio_verify_enabled_path_for(resource)
   end
 
   # Disable 2FA
   def POST_disable_twilio_verify
-    resource.assign_attributes(twilio_verify_enabled: false)
-    resource.save(:validate => false)
+    twilio_totp_factor_sid = resource.twilio_totp_factor_sid
+    resource.assign_attributes(twilio_verify_enabled: false, twilio_totp_factor_sid: nil)
+    resource.save(validate: false)
+
+    other_resource = resource.class.find_by(twilio_totp_factor_sid: twilio_totp_factor_sid)
+    if other_resource
+      # If another resource has the same twilio_totp_factor_sid, do not delete the user from
+      # the API.
+      forget_device
+      set_flash_message(:notice, :disabled)
+    else
+      begin
+        TwilioVerifyService.delete_totp_service(resource)
+        forget_device
+        set_flash_message(:notice, :disabled)
+      rescue StandardError => _err
+        # If deleting the user from the API fails, set everything back to what
+        # it was before.
+        resource.assign_attributes(twilio_verify_enabled: true, twilio_totp_factor_sid: twilio_totp_factor_sid)
+        resource.save(validate: false)
+        set_flash_message(:error, :not_disabled)
+      end
+    end
     redirect_to after_twilio_verify_disabled_path_for(resource)
   end
 
@@ -105,7 +138,7 @@ class Devise::DeviseTwilioVerifyController < DeviseController
 
   def request_sms
     if @resource.blank? || @resource.mobile_phone.blank?
-      render :json => {:sent => false, :message => "User couldn't be found."}
+      render json: { sent: false, message: "User couldn't be found." }
       return
     end
 
@@ -143,7 +176,9 @@ class Devise::DeviseTwilioVerifyController < DeviseController
   end
 
   def check_resource_not_twilio_verify_enabled
-    if resource.twilio_verify_enabled
+    if resource.twilio_totp_factor_sid.blank?
+      redirect_to [resource_name, :enable_twilio_verify]
+    elsif resource.twilio_verify_enabled?
       redirect_to after_twilio_verify_verified_path_for(resource)
     end
   end

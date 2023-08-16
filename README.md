@@ -85,7 +85,7 @@ Next add the gem to your Gemfile:
 
 ```ruby
 gem 'devise'
-gem 'devise-twilio-verify'
+gem 'devise-twilio-verify', github: 'AscentSoftware/devise-twilio-verify'
 ```
 
 And then run `bundle install`

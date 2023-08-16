@@ -47,6 +47,7 @@ RSpec.describe DeviseTwilioVerify::Generators::InstallGenerator, type: :generato
       expect(devise_config).to match("Devise Twilio Verify Authentication Extension")
       expect(devise_config).to match("# config.twilio_verify_remember_device = 1.month")
       expect(devise_config).to match("# config.twilio_verify_enable_qr_code = false")
+      expect(devise_config).to match("# config.twilio_verify_resource_phone_attribute = :telephone")
     end
 
     it "creates a twilio_verify initializer" do

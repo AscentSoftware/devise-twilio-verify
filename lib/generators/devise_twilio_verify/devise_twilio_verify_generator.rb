@@ -19,7 +19,7 @@ module DeviseTwilioVerify
         if File.exist?(path) &&
            !File.read(path).include?(":authy_id")
           inject_into_file(path,
-                           ":authy_id, :last_sign_in_with_twilio_verify, ",
+                           ":twilio_totp_factor_sid, :last_sign_in_with_twilio_verify, ",
                            :after => "attr_accessible ")
         end
       end

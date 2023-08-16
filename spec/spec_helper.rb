@@ -1,14 +1,18 @@
 # frozen_string_literal: true
 ENV["RAILS_ENV"] = "test"
 
+require "byebug"
+
 require "bundler"
+Bundler.require :default, :development
+
+require "dotenv/load"
 
 require "simplecov"
 SimpleCov.start do
   add_filter "/spec/"
 end
 
-Bundler.require :default, :development
 require "devise"
 require "./lib/devise-twilio-verify"
 Combustion.initialize!(:all)
