@@ -43,3 +43,4 @@ initializers/twilio_verify.rb
 .byebug_history
 
 .rspec_status
+.idea/
