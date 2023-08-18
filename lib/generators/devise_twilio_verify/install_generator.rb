@@ -20,7 +20,7 @@ module DeviseTwilioVerify
         "  # Note: you need to enable this in your Twilio console.\n" +
         "  # config.twilio_verify_enable_qr_code = false\n\n" +
         "  # Change attribute used to find resource record.\n" +
-        "  # By default it is assumed to be mobile_phone\n" +
+        "  # By default it is assumed to be mobile_phone.\n" +
         "  # config.twilio_verify_resource_phone_attribute = :telephone\n\n", :after => "Devise.setup do |config|\n"
       end
 

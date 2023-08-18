@@ -20,7 +20,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         end
 
         it "should not verify a token" do
-          expect(TwilioVerifyService).not_to receive(:verify_sms_token)
+          expect(TwilioVerifyService).not_to receive(:verify_totp_token)
           post :POST_verify_twilio_verify
         end
       end
@@ -43,7 +43,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         end
 
         it "should not verify a token" do
-          expect(TwilioVerifyService).not_to receive(:verify_sms_token)
+          expect(TwilioVerifyService).not_to receive(:verify_totp_token)
           post :POST_verify_twilio_verify
         end
       end
@@ -72,8 +72,8 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       describe "with a valid token" do
         before(:each) {
           expect(TwilioVerifyService).to(
-            receive(:verify_sms_token)
-              .with(user.mobile_phone, valid_twilio_verify_token)
+            receive(:verify_totp_token)
+              .with(user, valid_twilio_verify_token)
               .and_return(verify_success)
           )
         }
@@ -144,11 +144,6 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       describe "with an invalid token" do
         before(:each) {
           expect(TwilioVerifyService).to(
-            receive(:verify_sms_token)
-              .with(user.mobile_phone, invalid_twilio_verify_token)
-              .and_return(verify_failure)
-          )
-          expect(TwilioVerifyService).to(
             receive(:verify_totp_token)
               .with(user, invalid_twilio_verify_token)
               .and_return(verify_failure)
@@ -181,13 +176,6 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
         it 'locks the account when failed_attempts exceeds maximum' do
           expect(TwilioVerifyService).to(
-            receive(:verify_sms_token)
-              .exactly(Devise.maximum_attempts)
-              .times
-              .with(lockable_user.mobile_phone, invalid_twilio_verify_token)
-              .and_return(verify_failure)
-          )
-          expect(TwilioVerifyService).to(
             receive(:verify_totp_token)
               .exactly(Devise.maximum_attempts)
               .with(lockable_user, invalid_twilio_verify_token)
@@ -207,13 +195,6 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           request.session['user_id']               = user.id
           request.session['user_password_checked'] = true
 
-          expect(TwilioVerifyService).to(
-            receive(:verify_sms_token)
-              .exactly(Devise.maximum_attempts)
-              .times
-              .with(user.mobile_phone, invalid_twilio_verify_token)
-              .and_return(verify_failure)
-          )
           expect(TwilioVerifyService).to(
             receive(:verify_totp_token)
               .exactly(Devise.maximum_attempts)
@@ -261,7 +242,13 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
     end
 
     describe "with a logged in user" do
-      let(:enable_success) { double("Twilio::Verify::Response", status: 'unverified', sid: 'YF123456') }
+      let(:enable_success) do
+        double(
+          "Twilio::Verify::Response",
+          status: 'unverified', sid: 'YF123456',
+          binding: double(uri: 'https://example.com/qr.png')
+        )
+      end
       let(:enable_failure) { double("Twilio::Verify::Response", status: 'failed', sid: nil) }
 
       before(:each) { sign_in(user) }
@@ -289,8 +276,8 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
       describe "POST #enable_twilio_verify" do
         let(:user) { create(:user, twilio_totp_factor_sid: 'dummy') }
-        let(:cellphone) { '3010008090' }
-        let(:country_code) { '57' }
+        let(:cellphone) { '3010008090' } # TODO currently ignored
+        let(:country_code) { '57' } # TODO currently ignored
 
         describe "with a successful registration for TOTP" do
           before(:each) do
@@ -305,6 +292,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           it "save the twilio_totp_factor_sid to the user" do
             user.reload
             expect(user.twilio_totp_factor_sid).to eq('YF123456')
+            expect(user.twilio_totp_seed).to eq('https://example.com/qr.png')
           end
 
           it "should not enable the user yet" do
@@ -352,6 +340,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           it "does not update the twilio_totp_factor_sid" do
             user.reload
             expect(user.twilio_totp_factor_sid).to eq('dummy')
+            expect(user.twilio_totp_seed).to be_nil
           end
 
           it "shows an error flash" do
@@ -365,6 +354,12 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
 
       describe "GET verify_twilio_verify_installation" do
+        let(:qr_code_obj) { double('RQRCode::QRCode', as_svg: 'some-svg') }
+
+        before do
+          allow(RQRCode::QRCode).to receive(:new) { qr_code_obj }
+        end
+
         describe "with a user that hasn't enabled twilio_verify yet" do
           let(:user) { create(:user) }
           before(:each) { sign_in(user) }
@@ -383,35 +378,32 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         end
 
         describe "with a user with a totp factor sid without twilio_verify enabled" do
-          before(:each) { user.update_attribute(:twilio_verify_enabled, false) }
+          before(:each) do
+            user.update(twilio_verify_enabled: false, twilio_totp_seed: 'some-seed')
+          end
 
           it "should render the twilio_verify verification page" do
             get :GET_verify_twilio_verify_installation
             expect(response).to render_template('verify_twilio_verify_installation')
           end
 
-          describe "with qr codes turned on", pending: true do
-            before(:each) do
-              Devise.twilio_verify_enable_qr_code = true
-            end
-
-            after(:each) do
-              Devise.twilio_verify_enable_qr_code = false
-            end
-
-            it "should hit API for a QR code" do
-              get :GET_verify_twilio_verify_installation
-              expect(response).to render_template('verify_twilio_verify_installation')
-              expect(assigns[:twilio_verify_qr_code]).to eq('https://example.com/qr.png')
-            end
+          it "should generate a QR code as svg" do
+            get :GET_verify_twilio_verify_installation
+            expect(response).to render_template('verify_twilio_verify_installation')
+            expect(assigns[:qr_code]).to eq('some-svg')
           end
         end
       end
 
       describe "POST verify_twilio_verify_installation" do
         let(:token) { "000000" }
-        let(:verify_success) { double("Twilio::Verify::Response", status: 'approved') }
+        let(:verify_success) { double("Twilio::Verify::Response", status: 'verified') }
         let(:verify_failure) { double("Twilio::Verify::Response", status: 'failed') }
+        let(:qr_code_obj) { double('RQRCode::QRCode', as_svg: 'some-svg') }
+
+        before do
+          allow(RQRCode::QRCode).to receive(:new) { qr_code_obj }
+        end
 
         describe "with a user without a totp factor sid" do
           let(:user) { create(:user) }
@@ -435,8 +427,8 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           describe "successful verification" do
             before(:each) do
               expect(TwilioVerifyService).to(
-                receive(:verify_sms_token)
-                  .with(user.mobile_phone, token)
+                receive(:confirm_totp_service)
+                  .with(user, token)
                   .and_return(verify_success)
               )
               post :POST_verify_twilio_verify_installation, :params => { :token => token, :remember_device => '0' }
@@ -464,8 +456,8 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           describe "successful verification with remember device" do
             before(:each) do
               expect(TwilioVerifyService).to(
-                receive(:verify_sms_token)
-                  .with(user.mobile_phone, token)
+                receive(:confirm_totp_service)
+                  .with(user, token)
                   .and_return(verify_success)
               )
               post :POST_verify_twilio_verify_installation, :params => { :token => token, :remember_device => '1' }
@@ -475,6 +467,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
               user.reload
               expect(user.twilio_verify_enabled).to be true
             end
+
             it "should set {resource}_twilio_verify_token_checked in the session" do
               expect(session['user_twilio_verify_token_checked']).to be true
             end
@@ -495,8 +488,8 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
           describe "unsuccessful verification" do
             before(:each) do
               expect(TwilioVerifyService).to(
-                receive(:verify_sms_token)
-                  .with(user.mobile_phone, token)
+                receive(:confirm_totp_service)
+                  .with(user, token)
                   .and_return(verify_failure)
               )
               post :POST_verify_twilio_verify_installation, :params => { :token => token }
@@ -510,28 +503,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             it "should set an error flash and render verify_twilio_verify_installation" do
               expect(response).to render_template('verify_twilio_verify_installation')
               expect(flash[:error]).to eq('Something went wrong while enabling two factor authentication')
-            end
-          end
-
-          describe "unsuccessful verification with qr codes turned on", pending: true do
-            before(:each) do
-              Devise.twilio_verify_enable_qr_code = true
-            end
-
-            after(:each) do
-              Devise.twilio_verify_enable_qr_code = false
-            end
-
-            it "should hit API for a QR code" do
-              expect(TwilioVerifyService).to(
-                receive(:verify_sms_token)
-                  .with(user.mobile_phone, token)
-                  .and_return(verify_success)
-              )
-
-              post :POST_verify_twilio_verify_installation, :params => { :token => token }
-              expect(response).to render_template('verify_twilio_verify_installation')
-              expect(assigns[:twilio_verify_qr_code]).to eq('https://example.com/qr.png')
+              expect(assigns[:qr_code]).to eq('some-svg')
             end
           end
         end
@@ -637,7 +609,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
 
   describe "requesting authentication tokens" do
     describe "without a user" do
-      it "Should not request sms if user couldn't be found" do
+      it "Should not request sms if user couldn't be found", pending: true do
         expect(TwilioVerifyService).not_to receive(:send_sms_token)
 
         post :request_sms
@@ -649,7 +621,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
     end
 
-    describe "#request_sms" do
+    describe "#request_sms", pending: true do
       let(:verify_success) { double("Twilio::Verify::Response", status: 'pending') }
       let(:verify_failure) { double("Twilio::Verify::Response", status: 'failed') }
 

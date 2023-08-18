@@ -29,6 +29,8 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "devise", ">= 4.0.0"
   spec.add_dependency "twilio-ruby"
+  spec.add_dependency "phonelib"
+  spec.add_dependency "rqrcode", "~> 2.0"
 
   spec.add_development_dependency "appraisal", "~> 2.2"
   spec.add_development_dependency "bundler", ">= 1.16"

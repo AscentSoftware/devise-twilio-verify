@@ -2,11 +2,16 @@ require 'active_support/concern'
 require 'active_support/core_ext/integer/time'
 require 'devise'
 require 'twilio-ruby'
+require 'phonelib'
+require 'rqrcode'
 
 module Devise
-  mattr_accessor :twilio_verify_remember_device, :twilio_verify_enable_qr_code, :twilio_verify_resource_phone_attribute
+  mattr_accessor(
+    :twilio_verify_remember_device, :twilio_verify_enable_qr_code,
+    :twilio_verify_resource_phone_attribute, :twilio_verify_type
+  )
   @@twilio_verify_remember_device = 1.month
-  @@twilio_verify_enable_qr_code = false
+  @@twilio_verify_enable_qr_code = true
   @@twilio_verify_resource_phone_attribute = :mobile_phone
 end
 

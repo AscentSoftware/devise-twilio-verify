@@ -11,10 +11,10 @@ module DeviseTwilioVerify
 
       def remember_device(id)
         cookies.signed[:remember_device] = {
-          :value => {expires: Time.now.to_i, id: id}.to_json,
-          :secure => !(Rails.env.test? || Rails.env.development?),
-          :httponly => !(Rails.env.test? || Rails.env.development?),
-          :expires => resource_class.twilio_verify_remember_device.from_now
+          value: { expires: Time.now.to_i, id: id }.to_json,
+          secure: !(Rails.env.test? || Rails.env.development?),
+          httponly: !(Rails.env.test? || Rails.env.development?),
+          expires: Devise.twilio_verify_remember_device.from_now
         }
       end
 

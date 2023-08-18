@@ -25,6 +25,7 @@ ActiveRecord::Schema.define do
     t.datetime "last_sign_in_with_twilio_verify"
     t.boolean "twilio_verify_enabled", default: false
     t.string "twilio_totp_factor_sid"
+    t.text "twilio_totp_seed"
     # single table inheritance so we can have lockable users
     t.string "type"
     t.string "mobile_phone"
