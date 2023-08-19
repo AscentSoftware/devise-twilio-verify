@@ -12,6 +12,10 @@
   - `TWILIO_AUTH_TOKEN`
   - `TWILIO_ACCOUNT_SID`
   - `TWILIO_VERIFY_SERVICE_SID`
+- Optionally add the following env vars to emulate 2fa workflow in non-development environments with a token:
+  - `FAKE_TWILIO_VERIFY_API=1` 
+  - `FAKE_TWILIO_VERIFY_TOKEN=123456` - (`000000` by default)
+- In development, 2fa is emulated by default with the default token.
 - Create/run a migration to rename  and add the following columns
   ```ruby
     class MigrateAuthyToTwilioVerify < ActiveRecord::Migration[6.1]

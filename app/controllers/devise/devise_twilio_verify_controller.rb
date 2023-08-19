@@ -53,7 +53,7 @@ class Devise::DeviseTwilioVerifyController < DeviseController
 
   # enable 2fa
   def POST_enable_twilio_verify
-    totp_factor = TwilioVerifyService.setup_totp_service(resource)
+    totp_factor = TwilioVerifyService.register_totp_service(resource)
 
     if totp_factor.sid.blank?
       set_flash_message(:error, :not_enabled)
