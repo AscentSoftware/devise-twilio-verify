@@ -82,7 +82,7 @@ class TwilioVerifyService
     end
 
     def fake_token
-      ENV['FAKE_TWILIO_VERIFY_TOKEN'] || '000000'
+      ENV['FAKE_TWILIO_VERIFY_TOKEN'] || '0000000'
     end
 
     def fake_api_on?

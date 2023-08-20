@@ -79,7 +79,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token" do
           let(:params) do
             {
-              token: '000000'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN']
             }
           end
 
@@ -99,7 +99,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
             around do |example|
               ENV['FAKE_TWILIO_VERIFY_TOKEN'] = '123123'
               example.run
-              ENV['FAKE_TWILIO_VERIFY_TOKEN'] = '000000'
+              ENV['FAKE_TWILIO_VERIFY_TOKEN'] = '0000000'
             end
 
             let(:params) do
@@ -140,7 +140,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token and remember_me in the session" do
           let(:params) do
             {
-              token: '000000'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN']
             }
           end
 
@@ -161,7 +161,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token and remember device selected" do
           let(:params) do
             {
-              token: '000000', remember_device: '1'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN'], remember_device: '1'
             }
           end
 
@@ -214,7 +214,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token" do
           let(:params) do
             {
-              token: '000000'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN']
             }
           end
 
@@ -256,7 +256,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token and remember_me in the session" do
           let(:params) do
             {
-              token: '000000'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN']
             }
           end
 
@@ -277,7 +277,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         describe "with fake token and remember device selected" do
           let(:params) do
             {
-              token: '000000', remember_device: '1'
+              token: ENV['FAKE_TWILIO_VERIFY_TOKEN'], remember_device: '1'
             }
           end
 
@@ -707,7 +707,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
       end
 
       describe "POST verify_twilio_verify_installation" do
-        let(:token) { "000000" }
+        let(:token) { ENV['FAKE_TWILIO_VERIFY_TOKEN'] }
         let(:verify_success) { double("Twilio::Verify::Response", status: 'verified') }
         let(:verify_failure) { double("Twilio::Verify::Response", status: 'failed') }
         let(:qr_code_obj) { double('RQRCode::QRCode', as_svg: 'some-svg') }
