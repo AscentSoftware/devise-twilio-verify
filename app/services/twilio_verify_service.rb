@@ -5,8 +5,7 @@ class TwilioVerifyService
     Struct.new(:sid, :binding)
           .new(
             'YF-DEV-SID',
-            Struct.new(:uri)
-                  .new('otpauth://totp/test-issuer:test?secret=test&issuer=test&algorithm=SHA1&digits=6&period=30')
+            { 'uri' => 'otpauth://totp/test-issuer:test?secret=test&issuer=test&algorithm=SHA1&digits=6&period=30' }
           )
   TOTP_CONFIRM_OK = Struct.new(:status).new('verified')
   TOTP_CONFIRM_FAILED = Struct.new(:status).new('failed')

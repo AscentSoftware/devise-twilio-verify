@@ -497,7 +497,7 @@ RSpec.describe Devise::DeviseTwilioVerifyController, type: :controller do
         double(
           "Twilio::Verify::Response",
           status: 'unverified', sid: 'YF123456',
-          binding: double(uri: 'https://example.com/qr.png')
+          binding: { 'uri' => 'https://example.com/qr.png' }
         )
       end
       let(:enable_failure) { double("Twilio::Verify::Response", status: 'failed', sid: nil) }

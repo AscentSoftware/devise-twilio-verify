@@ -62,7 +62,7 @@ class Devise::DeviseTwilioVerifyController < DeviseController
 
     args = {
       twilio_totp_factor_sid: totp_factor.sid,
-      twilio_totp_seed: totp_factor.binding.uri
+      twilio_totp_seed: totp_factor.binding['uri']
     }
     redirect_to [resource_name, :verify_twilio_verify_installation] and return if resource.update(**args)
 
