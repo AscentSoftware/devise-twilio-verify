@@ -224,6 +224,6 @@ class Devise::DeviseTwilioVerifyController < DeviseController
   def generate_qr_code_if_needed
     return unless resource_class.twilio_verify_enable_qr_code && resource.respond_to?(:twilio_totp_seed)
 
-    @qr_code = RQRCode::QRCode.new(resource.twilio_totp_seed).as_svg
+    @qr_code = RQRCode::QRCode.new(resource.twilio_totp_seed).as_svg(fill: :white, module_size: 5)
   end
 end
